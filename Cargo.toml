@@ -1,6 +1,6 @@
 [package]
 name = "skylight"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.92" # slint 1.18
 description = "Lightweight native Windows weather app: Rust + Slint software renderer, Open-Meteo data, about 30 MB of memory"
