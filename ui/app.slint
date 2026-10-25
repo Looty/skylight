@@ -1,0 +1,825 @@
+import { ScrollView, Palette } from "std-widgets.slint";
+import "../assets/fonts/LatoWeb-Regular.ttf";
+import "../assets/fonts/LatoWeb-Light.ttf";
+import "../assets/fonts/LatoWeb-Semibold.ttf";
+import "../assets/fonts/LatoWeb-Bold.ttf";
+
+export global Theme {
+    in property <int> mode: 0; // 0 system, 1 light, 2 dark
+    in property <color> accent: #ffc83d;
+    out property <bool> dark: mode == 2 || (mode == 0 && Palette.color-scheme == ColorScheme.dark);
+    out property <color> bg: dark ? #0c0f20 : #e9ecf8;
+    out property <color> surface: dark ? #171b3a : #ffffff;
+    out property <color> surface2: dark ? #1f2449 : #f2f4fc;
+    out property <color> surface3: dark ? #272d58 : #e4e8f7;
+    out property <color> line: dark ? #ffffff14 : #161a3a1a;
+    out property <color> track: dark ? #ffffff1a : #161a3a1a;
+    out property <color> fg: dark ? #eef0ff : #161a3a;
+    out property <color> fg2: dark ? #a9aed4 : #4f557e;
+    out property <color> fg3: dark ? #7378a8 : #7a81a8;
+    out property <color> on-accent: #2a2200;
+    out property <color> good: dark ? #47c98a : #1f9d62;
+    out property <color> warn: dark ? #f2994a : #c9640f;
+    out property <color> bad: dark ? #f06a78 : #d6404f;
+    out property <color> info: dark ? #5aa9ff : #2f7fe6;
+    out property <color> temp-c: dark ? #f0a45d : #e0782f;
+    out property <color> rain-c: dark ? #5aa9ff : #3b82f6;
+    pure public function tone(t: int) -> color {
+        t == 0 ? good : t == 1 ? warn : t == 2 ? bad : info
+    }
+}
+
+/// Animation phase, 0..1, advanced by a timer in Rust.
+export global Anim {
+    in-out property <float> pulse: 0;
+    in-out property <float> fall: 0;
+}
+
+export struct HourData { label: string, icon: int, temp: string, precip: string, now: bool, op: float, y: float, desc: string }
+export struct DayData { name: string, date: string, icon: int, hi: string, lo: string, today: bool, from: float, to: float }
+export struct PlaceData { name: string, region: string, temp: string, icon: int, selected: bool }
+export struct HitData { name: string, region: string }
+export struct FlagData { name: string, on: bool }
+export struct MarkData { x: float, text: string }
+export struct TileData {
+    title: string, value: string, unit: string, status: string, tone: int, caption: string,
+    track: string, arc: string, shape: string, stroke: float, color: color,
+}
+
+component Card inherits Rectangle {
+    background: Theme.surface;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: Theme.line;
+}
+
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <int> tone;
+    height: 22px;
+    width: lbl.preferred-width + 28px;
+    border-radius: 11px;
+    background: Theme.tone(tone).with-alpha(0.18);
+    Rectangle {
+        x: 9px; y: (parent.height - self.height) / 2;
+        width: 6px; height: 6px; border-radius: 3px;
+        background: Theme.tone(root.tone);
+    }
+    lbl := Text {
+        x: 20px; y: (parent.height - self.height) / 2;
+        text: root.text; font-size: 12px; font-weight: 600;
+        color: Theme.tone(root.tone).mix(Theme.fg, 0.35);
+    }
+}
+
+component WIcon inherits Rectangle {
+    in property <int> kind; // 0 sun, 1 moon, 2 partly, 3 night cloud, 4 cloud, 5 rain
+    // Animation is opt-in per instance: small list icons stay static so idle CPU stays near zero.
+    // Values come from a 10 fps tick in Rust; Slint's own 60 fps animations cost ~16% of a core.
+    in property <bool> animated: false;
+    property <float> pulse: root.animated ? Anim.pulse : 0;
+    property <length> drift: root.animated ? Anim.pulse * 4px - 2px : 0px;
+    property <length> fall: root.animated ? Anim.fall * 6px : 0px;
+    width: 32px; height: 32px;
+    if kind == 0 : Rectangle {
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M24 7 A17 17 0 0 1 24 41 A17 17 0 0 1 24 7 Z";
+            fill: #ffb347;
+            opacity: 0.18 + 0.2 * root.pulse;
+        }
+        // Two ray sets that fade against each other, so the sun shimmers without rotating.
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M24 2 L24 6 M24 42 L24 46 M2 24 L6 24 M42 24 L46 24";
+            stroke: #ffb347; stroke-width: Math.max(1px, root.width / 24); stroke-line-cap: round;
+            opacity: 0.4 + 0.6 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M8.5 8.5 L11.3 11.3 M36.7 36.7 L39.5 39.5 M39.5 8.5 L36.7 11.3 M8.5 39.5 L11.3 36.7";
+            stroke: #ffb347; stroke-width: Math.max(1px, root.width / 24); stroke-line-cap: round;
+            opacity: 1 - 0.6 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M24 13 A11 11 0 0 1 24 35 A11 11 0 0 1 24 13 Z";
+            fill: @linear-gradient(135deg, #ffd84d 0%, #ff8a1f 100%);
+        }
+    }
+    if kind == 1 : Rectangle {
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M24 6 A18 18 0 0 1 24 42 A18 18 0 0 1 24 6 Z";
+            fill: #ffcf5a;
+            opacity: 0.06 + 0.12 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M28 8 A16 16 0 1 0 40 32 A12.5 12.5 0 0 1 28 8 Z";
+            fill: #ffcf5a;
+        }
+    }
+    if kind == 2 : Rectangle {
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M18 3 L18 6 M18 28 L18 31 M4 17 L7 17 M29 17 L32 17";
+            stroke: #ffb347; stroke-width: Math.max(1px, root.width / 28); stroke-line-cap: round;
+            opacity: 0.4 + 0.6 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M8 7 L10 9 M26 25 L28 27 M28 7 L26 9 M8 27 L10 25";
+            stroke: #ffb347; stroke-width: Math.max(1px, root.width / 28); stroke-line-cap: round;
+            opacity: 1 - 0.6 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M18 8 A9 9 0 0 1 18 26 A9 9 0 0 1 18 8 Z";
+            fill: @linear-gradient(135deg, #ffd84d 0%, #ff8a1f 100%);
+        }
+        Path {
+            x: root.drift;
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M19.4 35.8 A6.4 6.4 0 0 1 18.9 23 A8.8 8.8 0 0 1 35.9 21.4 A6.8 6.8 0 0 1 36.2 35.8 Z";
+            fill: @linear-gradient(180deg, #ffffff 0%, #aebbea 100%);
+            stroke: #46508c59; stroke-width: 1px;
+        }
+    }
+    if kind == 3 : Rectangle {
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M19 2 A14 14 0 0 1 19 30 A14 14 0 0 1 19 2 Z";
+            fill: #ffcf5a;
+            opacity: 0.06 + 0.12 * root.pulse;
+        }
+        Path {
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M19 5 A10 10 0 1 0 26 22 A8 8 0 0 1 19 5 Z";
+            fill: #ffcf5a;
+        }
+        Path {
+            x: root.drift;
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M19.4 35.8 A6.4 6.4 0 0 1 18.9 23 A8.8 8.8 0 0 1 35.9 21.4 A6.8 6.8 0 0 1 36.2 35.8 Z";
+            fill: @linear-gradient(180deg, #ffffff 0%, #aebbea 100%);
+            stroke: #46508c59; stroke-width: 1px;
+        }
+    }
+    if kind == 4 : Path {
+        x: root.drift;
+        width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+        commands: "M13 36 A8 8 0 0 1 12.4 20 A11 11 0 0 1 33.6 18 A8.5 8.5 0 0 1 34 36 Z";
+        fill: @linear-gradient(180deg, #ffffff 0%, #aebbea 100%);
+        stroke: #46508c59; stroke-width: 1px;
+    }
+    if kind == 5 : Rectangle {
+        Path {
+            x: root.drift;
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M13 31 A8 8 0 0 1 12.4 15 A11 11 0 0 1 33.6 13 A8.5 8.5 0 0 1 34 31 Z";
+            fill: @linear-gradient(180deg, #ffffff 0%, #aebbea 100%);
+            stroke: #46508c59; stroke-width: 1px;
+        }
+        Path {
+            y: root.fall;
+            opacity: 1 - root.fall / 8px;
+            width: 100%; height: 100%; viewbox-width: 48; viewbox-height: 48;
+            commands: "M17 35 L15 40 M25 35 L23 40 M33 35 L31 40";
+            stroke: #4f9dff; stroke-width: Math.max(1px, root.width / 24); stroke-line-cap: round;
+        }
+    }
+}
+
+component Seg inherits Rectangle {
+    in property <[string]> options;
+    in property <int> current;
+    callback picked(int);
+    height: 32px;
+    border-radius: 10px;
+    background: Theme.surface2;
+    border-width: 1px;
+    border-color: Theme.line;
+    width: row.preferred-width + 4px;
+    row := HorizontalLayout {
+        padding: 2px; spacing: 2px;
+        for o[i] in root.options : Rectangle {
+            width: t.preferred-width + 24px;
+            border-radius: 8px;
+            background: root.current == i ? Theme.surface : transparent;
+            t := Text {
+                text: o; font-size: 13px;
+                font-weight: root.current == i ? 600 : 400;
+                color: root.current == i ? Theme.fg : Theme.fg2;
+                x: 12px; y: (parent.height - self.height) / 2;
+            }
+            TouchArea { clicked => { root.picked(i); } mouse-cursor: pointer; }
+        }
+    }
+}
+
+component Switch2 inherits Rectangle {
+    in property <bool> on;
+    callback toggled();
+    width: 40px; height: 22px; border-radius: 11px;
+    background: on ? Theme.accent : transparent;
+    border-width: 1px; border-color: on ? Theme.accent : Theme.fg3;
+    Rectangle {
+        width: 12px; height: 12px; border-radius: 6px;
+        y: (parent.height - self.height) / 2;
+        x: on ? parent.width - 18px : 5px;
+        background: on ? Theme.on-accent : Theme.fg3;
+        animate x { duration: 120ms; }
+    }
+    TouchArea { clicked => { root.toggled(); } mouse-cursor: pointer; }
+}
+
+component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> active;
+    callback clicked();
+    height: 30px; width: t.preferred-width + 28px; border-radius: 15px;
+    background: active ? Theme.accent : Theme.surface;
+    border-width: 1px; border-color: active ? Theme.accent : Theme.line;
+    t := Text {
+        text: root.text; font-size: 13px; font-weight: active ? 600 : 400;
+        color: active ? Theme.on-accent : Theme.fg2;
+        x: 14px; y: (parent.height - self.height) / 2;
+    }
+    TouchArea { clicked => { root.clicked(); } mouse-cursor: pointer; }
+}
+
+component SRow inherits Rectangle {
+    in property <string> title;
+    in property <string> desc;
+    min-height: 56px;
+    HorizontalLayout {
+        padding: 12px; padding-left: 16px; padding-right: 16px; spacing: 16px;
+        VerticalLayout {
+            alignment: center; horizontal-stretch: 1;
+            Text { text: root.title; color: Theme.fg; font-size: 14px; font-weight: 600; }
+            if root.desc != "" : Text { text: root.desc; color: Theme.fg3; font-size: 12px; wrap: word-wrap; }
+        }
+        VerticalLayout { alignment: center; @children }
+    }
+    Rectangle { y: 0; height: 1px; background: Theme.line; }
+}
+
+component TileCard inherits Card {
+    in property <TileData> d;
+    height: 214px;
+    VerticalLayout {
+        padding: 16px; spacing: 8px;
+        Text { text: d.title; color: Theme.fg2; font-size: 13px; font-weight: 600; }
+        HorizontalLayout {
+            spacing: 12px; alignment: start; height: 96px;
+            Rectangle {
+                width: 96px; height: 96px;
+                Path {
+                    width: 100%; height: 100%; viewbox-width: 100; viewbox-height: 100;
+                    commands: d.track; stroke: Theme.track; stroke-width: d.stroke * 1px; stroke-line-cap: round;
+                }
+                Path {
+                    width: 100%; height: 100%; viewbox-width: 100; viewbox-height: 100;
+                    commands: d.arc; stroke: d.color; stroke-width: d.stroke * 1px; stroke-line-cap: round;
+                }
+                Path {
+                    width: 100%; height: 100%; viewbox-width: 100; viewbox-height: 100;
+                    commands: d.shape; fill: d.color;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Text { text: d.value; font-size: 30px; font-weight: 300; color: Theme.fg; overflow: elide; }
+                Text { text: d.unit; font-size: 12px; color: Theme.fg3; overflow: elide; }
+            }
+        }
+        Pill { text: d.status; tone: d.tone; }
+        Text { text: d.caption; color: Theme.fg2; font-size: 12px; wrap: word-wrap; }
+    }
+}
+
+component TileGrid inherits Rectangle {
+    in property <[TileData]> tiles;
+    property <length> gap: 14px;
+    property <int> cols: Math.max(1, Math.floor((self.width + gap) / (230px + gap)));
+    property <length> tw: (self.width - gap * (cols - 1)) / cols;
+    height: Math.ceil(tiles.length / cols) * (214px + gap);
+    for t[i] in tiles : TileCard {
+        x: Math.mod(i, cols) * (tw + gap);
+        y: Math.floor(i / cols) * (214px + gap);
+        width: tw;
+        d: t;
+    }
+}
+
+component HourlyCard inherits Card {
+    in property <[HourData]> hours;
+    in property <string> chart-line;
+    in property <string> chart-area;
+    in property <float> now-y;
+    in property <[MarkData]> marks;
+    in property <string> title;
+    // Slint keeps a Path's aspect ratio, so the path's viewbox must match the chart box.
+    // The box height comes from the parent (to line up with the left column); Rust gets
+    // the resulting aspect ratio back and redraws the path in a matching viewbox.
+    in property <length> target-h: 300px;
+    in property <float> vb-h: 200;
+    callback aspect-changed(float);
+    property <length> ch: Math.max(110px, root.target-h - 182px);
+    property <float> aspect: root.ch / Math.max(1px, root.width - 32px);
+    changed aspect => { root.aspect-changed(root.aspect); }
+    init => { root.aspect-changed(root.aspect); }
+    height: 182px + ch;
+    // Column under the mouse, or -1. The mouse area covers the hour labels, chart and rain bar.
+    property <int> hover: area.has-hover ? Math.min(11, Math.max(0, Math.floor(area.mouse-x / (area.width / 12)))) : -1;
+    VerticalLayout {
+        padding: 16px; spacing: 6px;
+        HorizontalLayout {
+            Text { text: root.title; color: Theme.fg2; font-size: 14px; font-weight: 600; }
+            Rectangle { horizontal-stretch: 1; }
+            Text { text: "Bottom bar: chance of rain"; color: Theme.fg3; font-size: 12px; vertical-alignment: center; }
+        }
+        Rectangle {
+            VerticalLayout {
+                spacing: 6px;
+                HorizontalLayout {
+                    for h[i] in hours : Rectangle {
+                        horizontal-stretch: 1;
+                        border-radius: 10px;
+                        background: root.hover == i ? Theme.surface3 : transparent;
+                        animate background { duration: 120ms; }
+                        VerticalLayout {
+                            padding-top: 4px; padding-bottom: 4px; spacing: 3px; alignment: start;
+                            Text { text: h.label; horizontal-alignment: center; font-size: 12px; font-weight: h.now ? 700 : 400; color: h.now ? Theme.accent.mix(Theme.fg, 0.4) : Theme.fg2; }
+                            Rectangle {
+                                height: 30px;
+                                WIcon {
+                                    kind: h.icon; width: 28px; height: 28px;
+                                    animated: root.hover == i;
+                                    y: root.hover == i ? -1px : 1px;
+                                    animate y { duration: 120ms; }
+                                }
+                            }
+                            Text { text: h.temp; horizontal-alignment: center; font-size: 13px; color: root.hover == i ? Theme.fg : Theme.fg2; }
+                        }
+                    }
+                }
+                Rectangle {
+                    height: root.ch;
+                    Rectangle { y: 0; height: 1px; background: Theme.line; }
+                    Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
+                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-area; fill: Theme.temp-c.with-alpha(0.22); }
+                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-line; stroke: Theme.temp-c; stroke-width: 2.5px; }
+                    for m in marks : Rectangle {
+                        x: parent.width * m.x; width: 1px; height: parent.height;
+                        background: Theme.fg3.with-alpha(0.5);
+                        Text { x: 5px; y: parent.height - 18px; text: m.text; font-size: 11px; color: Theme.fg2; }
+                    }
+                    Rectangle {
+                        width: 12px; height: 12px; border-radius: 6px;
+                        x: parent.width * 1.5 / 12 - 6px; y: parent.height * now-y - 6px;
+                        background: Theme.accent; border-width: 3px; border-color: Theme.surface;
+                    }
+                    if root.hover >= 0 : Rectangle {
+                        x: parent.width * (root.hover + 0.5) / 12; width: 1px; height: parent.height;
+                        background: Theme.fg2.with-alpha(0.7);
+                    }
+                    if root.hover >= 0 : Rectangle {
+                        width: 12px; height: 12px; border-radius: 6px;
+                        x: parent.width * (root.hover + 0.5) / 12 - 6px; y: parent.height * root.hours[root.hover].y - 6px;
+                        background: Theme.temp-c; border-width: 3px; border-color: Theme.surface;
+                    }
+                    if root.hover >= 0 : Rectangle {
+                        property <length> lx: parent.width * (root.hover + 0.5) / 12;
+                        x: lx > parent.width - 190px ? lx - 178px : lx + 12px;
+                        y: 6px; width: 166px;
+                        height: 100px;
+                        border-radius: 10px; background: Theme.surface3; border-width: 1px; border-color: Theme.line;
+                        tip := VerticalLayout {
+                            x: 10px; y: 8px; width: parent.width - 20px; height: parent.height - 16px; spacing: 2px; alignment: start;
+                            Text { text: root.hours[root.hover].label == "Now" ? "Now" : root.hours[root.hover].label; font-size: 12px; color: Theme.fg3; }
+                            HorizontalLayout {
+                                spacing: 8px; alignment: start;
+                                WIcon { kind: root.hours[root.hover].icon; width: 26px; height: 26px; }
+                                Text { text: root.hours[root.hover].temp; font-size: 22px; font-weight: 300; color: Theme.fg; vertical-alignment: center; }
+                            }
+                            Text { text: root.hours[root.hover].desc; font-size: 12px; color: Theme.fg2; }
+                            Text { text: "Rain chance " + root.hours[root.hover].precip; font-size: 12px; color: Theme.fg2; }
+                        }
+                    }
+                }
+                HorizontalLayout {
+                    spacing: 2px;
+                    for h[i] in hours : Rectangle {
+                        horizontal-stretch: 1; height: 24px;
+                        background: i == 0 ? Theme.track : Theme.rain-c.with-alpha(h.op);
+                        border-top-left-radius: i == 0 ? 8px : 0px;
+                        border-bottom-left-radius: i == 0 ? 8px : 0px;
+                        border-top-right-radius: i == 11 ? 8px : 0px;
+                        border-bottom-right-radius: i == 11 ? 8px : 0px;
+                        Text { text: h.precip; font-size: 12px; font-weight: 600; color: i == 0 ? Theme.fg3 : Theme.fg; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                }
+            }
+            area := TouchArea { }
+        }
+    }
+}
+
+component Section inherits VerticalLayout {
+    in property <string> title;
+    spacing: 8px;
+    Text { text: root.title; font-size: 20px; font-weight: 600; color: Theme.fg; }
+}
+
+export component AppWindow inherits Window {
+    title: "Skylight";
+    icon: @image-url("../assets/icon.png");
+    preferred-width: 1180px; preferred-height: 780px;
+    min-width: 760px; min-height: 560px;
+    background: Theme.bg;
+    in property <string> font-family: "Lato";
+    default-font-family: root.font-family;
+    default-font-size: 14px;
+
+    // ---- data from Rust ----
+    in property <string> city-name;
+    in property <string> city-region;
+    in property <string> temp;
+    in property <string> temp-unit;
+    in property <string> cond;
+    in property <string> hi-lo;
+    in property <string> feels-text;
+    in property <int> cond-icon;
+    in property <string> updated;
+    in property <string> status-msg;
+    in property <[PlaceData]> places;
+    in property <[DayData]> days;
+    in property <[HourData]> hours;
+    in property <string> chart-line;
+    in property <string> chart-area;
+    in property <float> chart-vb: 200;
+    in property <float> now-y;
+    in property <[MarkData]> marks;
+    in property <[TileData]> tiles-ov;
+    in property <[TileData]> tiles-air;
+    in property <[TileData]> tiles-sky;
+    in property <bool> show-hourly: true;
+    in property <bool> show-daily: true;
+    in property <[HitData]> hits;
+    in property <bool> searching;
+
+    // ---- settings state ----
+    in property <int> theme-mode;
+    in property <int> accent-index;
+    in property <int> u-temp;
+    in property <int> u-wind;
+    in property <int> u-press;
+    in property <int> u-dist;
+    in property <int> refresh-index;
+    in property <int> cache-index;
+    in property <bool> anim;
+    in property <bool> autostart;
+    in property <bool> tray-on;
+    in property <string> tray-tip;
+    in property <[FlagData]> flags;
+
+    // ---- ui state ----
+    in-out property <bool> settings-open: false;
+    in-out property <int> tab: 0;
+    in-out property <int> nav: 0;
+
+    callback select-place(int);
+    callback remove-place(int);
+    callback add-hit(int);
+    callback search(string);
+    callback set-theme(int);
+    callback set-accent(int);
+    callback set-unit(int, int);
+    callback set-refresh(int);
+    callback set-cache(int);
+    callback set-autostart(bool);
+    callback set-tray(bool);
+    callback chart-aspect(float);
+    callback set-anim(bool);
+    callback toggle-flag(int);
+    callback refresh();
+
+    // ---- header ----
+    VerticalLayout {
+        Rectangle {
+            height: 52px;
+            HorizontalLayout {
+                padding-left: 20px; padding-right: 20px; spacing: 12px;
+                Rectangle {
+                    width: 30px;
+                    if root.anim : WIcon { kind: root.cond-icon; width: 30px; height: 30px; animated: true; }
+                    if !root.anim : WIcon { kind: root.cond-icon; width: 30px; height: 30px; }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    Text { text: root.city-name; font-size: 17px; font-weight: 600; color: Theme.fg; }
+                }
+                if root.width > 1000px : Text { text: root.city-region; color: Theme.fg3; vertical-alignment: center; overflow: elide; }
+                Rectangle { horizontal-stretch: 1; }
+                if root.width > 1150px || root.status-msg != "" : Text { text: root.status-msg != "" ? root.status-msg : root.updated; color: root.status-msg != "" ? Theme.warn : Theme.fg3; font-size: 12px; vertical-alignment: center; }
+                Rectangle {
+                    width: 34px; height: 34px; border-radius: 10px; y: 9px;
+                    background: refresh-ta.has-hover ? Theme.surface2 : transparent;
+                    Text { text: "↻"; font-size: 18px; color: Theme.fg2; horizontal-alignment: center; vertical-alignment: center; }
+                    refresh-ta := TouchArea { clicked => { root.refresh(); } mouse-cursor: pointer; }
+                }
+                Seg {
+                    y: 10px;
+                    options: ["Weather", "Settings"];
+                    current: root.settings-open ? 1 : 0;
+                    picked(i) => { root.settings-open = i == 1; }
+                }
+            }
+            // Dashboard sections, centred in the title row like a mode switch.
+            if !root.settings-open : Seg {
+                x: (parent.width - self.width) / 2; y: 10px;
+                options: ["Overview", "Wind & air", "Sun & moon"];
+                current: root.tab;
+                picked(i) => { root.tab = i; }
+            }
+        }
+
+        // ---- dashboard: side rail ----
+        if !root.settings-open : HorizontalLayout {
+            padding: 6px; padding-left: 20px; padding-right: 20px; padding-bottom: 20px; spacing: 14px;
+            ScrollView {
+                width: 296px;
+                VerticalLayout {
+                    spacing: 14px; padding-right: 6px; alignment: start;
+                    Card {
+                        height: 168px;
+                        HorizontalLayout {
+                            padding: 18px; spacing: 8px;
+                            VerticalLayout {
+                                alignment: center; spacing: 2px;
+                                HorizontalLayout {
+                                    alignment: start; spacing: 2px;
+                                    Text { text: root.temp; font-size: 64px; font-weight: 300; color: Theme.fg; }
+                                    Text { text: "°" + root.temp-unit; font-size: 20px; color: Theme.fg2; vertical-alignment: top; }
+                                }
+                                Text { text: root.cond; font-size: 16px; font-weight: 600; color: Theme.fg; }
+                                Text { text: root.hi-lo; font-size: 12px; color: Theme.fg2; }
+                                Text { text: root.feels-text; font-size: 12px; color: Theme.fg3; }
+                            }
+                            Rectangle {
+                                if root.anim : WIcon { kind: root.cond-icon; width: 64px; height: 64px; animated: true; }
+                                if !root.anim : WIcon { kind: root.cond-icon; width: 64px; height: 64px; }
+                            }
+                        }
+                    }
+                    places-card := Card {
+                        VerticalLayout {
+                            padding: 12px; spacing: 2px;
+                            Text { text: "Saved places"; font-size: 13px; font-weight: 600; color: Theme.fg2; padding: 4px; }
+                            for p[i] in root.places : Rectangle {
+                                height: 48px; border-radius: 10px;
+                                background: p.selected ? Theme.surface3 : (pta.has-hover ? Theme.surface2 : transparent);
+                                HorizontalLayout {
+                                    padding-left: 10px; padding-right: 10px; spacing: 8px;
+                                    VerticalLayout {
+                                        alignment: center; horizontal-stretch: 1;
+                                        Text { text: p.name; font-size: 14px; color: Theme.fg; overflow: elide; }
+                                        Text { text: p.region; font-size: 11px; color: Theme.fg3; overflow: elide; }
+                                    }
+                                    Rectangle { width: 26px; WIcon { kind: p.icon; width: 26px; height: 26px; } }
+                                    Text { text: p.temp; font-size: 17px; color: Theme.fg; vertical-alignment: center; min-width: 34px; horizontal-alignment: right; }
+                                }
+                                pta := TouchArea { clicked => { root.select-place(i); } mouse-cursor: pointer; }
+                            }
+                        }
+                    }
+                    if root.show-daily : Card {
+                        VerticalLayout {
+                            padding: 14px; spacing: 0px;
+                            Text { text: "Daily forecast"; font-size: 13px; font-weight: 600; color: Theme.fg2; padding-bottom: 6px; }
+                            for d in root.days : Rectangle {
+                                height: 38px;
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Text { text: d.today ? "Today" : d.name; width: 50px; font-size: 13px; font-weight: d.today ? 700 : 400; color: Theme.fg2; vertical-alignment: center; }
+                                    Rectangle { width: 26px; WIcon { kind: d.icon; width: 26px; height: 26px; } }
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        Rectangle {
+                                            height: 5px; border-radius: 3px; background: Theme.track;
+                                            Rectangle {
+                                                x: parent.width * d.from; width: parent.width * (d.to - d.from); height: 5px; border-radius: 3px;
+                                                background: @linear-gradient(90deg, Theme.info, Theme.temp-c);
+                                            }
+                                        }
+                                    }
+                                    Text { text: d.hi + " / " + d.lo; font-size: 13px; color: Theme.fg; vertical-alignment: center; horizontal-alignment: right; min-width: 64px; }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                spacing: 12px;
+                ScrollView {
+                    VerticalLayout {
+                        spacing: 14px; padding-right: 6px; alignment: start;
+                        if root.tab == 0 && root.show-hourly : HourlyCard {
+                            title: "Hourly"; hours: root.hours; chart-line: root.chart-line; chart-area: root.chart-area;
+                            now-y: root.now-y; marks: root.marks;
+                            // Bottom edge lines up with the Saved places card on the left.
+                            target-h: places-card.y + places-card.height;
+                            vb-h: root.chart-vb;
+                            aspect-changed(a) => { root.chart-aspect(a); }
+                        }
+                        TileGrid { tiles: root.tab == 0 ? root.tiles-ov : root.tab == 1 ? root.tiles-air : root.tiles-sky; }
+                    }
+                }
+            }
+        }
+
+        // ---- settings: side nav ----
+        if root.settings-open : HorizontalLayout {
+            padding: 6px; padding-left: 20px; padding-right: 20px; padding-bottom: 20px; spacing: 24px;
+            VerticalLayout {
+                width: 200px; spacing: 2px; alignment: start;
+                for n[i] in ["Appearance", "Location", "Units", "Dashboard tiles", "Updates", "System"] : Rectangle {
+                    height: 40px; border-radius: 10px;
+                    background: root.nav == i ? Theme.surface : (nta.has-hover ? Theme.surface2 : transparent);
+                    Rectangle { x: 0; width: 3px; height: 18px; y: 11px; border-radius: 2px; background: root.nav == i ? Theme.accent : transparent; }
+                    Text { text: n; x: 16px; vertical-alignment: center; font-size: 14px; font-weight: root.nav == i ? 600 : 400; color: root.nav == i ? Theme.fg : Theme.fg2; }
+                    nta := TouchArea { clicked => { root.nav = i; } mouse-cursor: pointer; }
+                }
+            }
+            ScrollView {
+                VerticalLayout {
+                    padding-right: 6px; spacing: 12px; alignment: start;
+
+                    if root.nav == 0 : Section {
+                        title: "Appearance";
+                        Card {
+                            VerticalLayout {
+                                SRow {
+                                    title: "Theme"; desc: "Follow Windows or pick one.";
+                                    Seg { options: ["System", "Light", "Dark"]; current: root.theme-mode; picked(i) => { root.set-theme(i); } }
+                                }
+                                SRow {
+                                    title: "Accent colour"; desc: "Highlights and the current hour.";
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        for c[i] in [#ffc83d, #5aa9ff, #3fd0a0, #ff7a9c, #a78bfa] : Rectangle {
+                                            width: 28px; height: 28px; border-radius: 14px; background: c;
+                                            border-width: 2px; border-color: root.accent-index == i ? Theme.fg : transparent;
+                                            TouchArea { clicked => { root.set-accent(i); } mouse-cursor: pointer; }
+                                        }
+                                    }
+                                }
+                                SRow {
+                                    title: "Animated weather icons"; desc: "Turn off to save a little power.";
+                                    Switch2 { on: root.anim; toggled => { root.set-anim(!root.anim); } }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.nav == 1 : Section {
+                        title: "Location";
+                        Card {
+                            VerticalLayout {
+                                padding: 12px; spacing: 6px;
+                                for p[i] in root.places : Rectangle {
+                                    height: 46px; border-radius: 10px; background: Theme.surface2;
+                                    border-width: 1px; border-color: p.selected ? Theme.accent : Theme.line;
+                                    HorizontalLayout {
+                                        padding-left: 12px; padding-right: 8px; spacing: 10px;
+                                        Rectangle {
+                                            width: 18px;
+                                            Rectangle {
+                                                width: 16px; height: 16px; border-radius: 8px; y: 15px;
+                                                border-width: 2px; border-color: p.selected ? Theme.accent : Theme.fg3;
+                                                Rectangle { width: 8px; height: 8px; border-radius: 4px; x: 2px; y: 2px; background: p.selected ? Theme.accent : transparent; }
+                                            }
+                                            TouchArea { clicked => { root.select-place(i); } mouse-cursor: pointer; }
+                                        }
+                                        VerticalLayout {
+                                            alignment: center; horizontal-stretch: 1;
+                                            Text { text: p.name; color: Theme.fg; font-size: 14px; overflow: elide; }
+                                            Text { text: p.region; color: Theme.fg3; font-size: 11px; overflow: elide; }
+                                        }
+                                        Text { text: p.temp; color: Theme.fg2; vertical-alignment: center; }
+                                        Rectangle {
+                                            width: 30px;
+                                            Text { text: "×"; font-size: 20px; color: Theme.fg3; horizontal-alignment: center; vertical-alignment: center; }
+                                            TouchArea { clicked => { root.remove-place(i); } mouse-cursor: pointer; }
+                                        }
+                                    }
+                                }
+                                Rectangle {
+                                    height: 38px; border-radius: 10px; background: Theme.surface2; border-width: 1px; border-color: Theme.line;
+                                    // The whole box is clickable, not just the line of text.
+                                    TouchArea { clicked => { ti.focus(); } mouse-cursor: text; }
+                                    ti := TextInput {
+                                        x: 12px; width: parent.width - 24px; height: parent.height;
+                                        vertical-alignment: center;
+                                        color: Theme.fg; font-size: 14px; single-line: true;
+                                        accepted => { root.search(self.text); }
+                                        edited => { if (self.text.character-count >= 3) { root.search(self.text); } }
+                                    }
+                                    if ti.text == "" : Text { x: 12px; width: parent.width - 24px; height: parent.height; text: "Search for a city to add"; color: Theme.fg3; vertical-alignment: center; }
+                                }
+                                if root.searching : Text { text: "Searching…"; color: Theme.fg3; font-size: 12px; }
+                                for h[i] in root.hits : Rectangle {
+                                    height: 38px; border-radius: 10px;
+                                    background: hta.has-hover ? Theme.surface3 : transparent;
+                                    HorizontalLayout {
+                                        padding-left: 12px; spacing: 8px;
+                                        Text { text: "+  " + h.name; color: Theme.fg; vertical-alignment: center; }
+                                        Text { text: h.region; color: Theme.fg3; font-size: 12px; vertical-alignment: center; overflow: elide; }
+                                    }
+                                    hta := TouchArea { clicked => { root.add-hit(i); ti.text = ""; } mouse-cursor: pointer; }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.nav == 2 : Section {
+                        title: "Units";
+                        Card {
+                            VerticalLayout {
+                                SRow { title: "Temperature"; Seg { options: ["°C", "°F"]; current: root.u-temp; picked(i) => { root.set-unit(0, i); } } }
+                                SRow { title: "Wind speed"; Seg { options: ["km/h", "m/s", "mph", "kn"]; current: root.u-wind; picked(i) => { root.set-unit(1, i); } } }
+                                SRow { title: "Pressure"; Seg { options: ["hPa", "inHg", "mmHg"]; current: root.u-press; picked(i) => { root.set-unit(2, i); } } }
+                                SRow { title: "Distance"; Seg { options: ["km", "mi"]; current: root.u-dist; picked(i) => { root.set-unit(3, i); } } }
+                            }
+                        }
+                    }
+
+                    if root.nav == 3 : Section {
+                        title: "Dashboard tiles";
+                        Card {
+                            VerticalLayout {
+                                for f[i] in root.flags : SRow {
+                                    title: f.name;
+                                    Switch2 { on: f.on; toggled => { root.toggle-flag(i); } }
+                                }
+                            }
+                        }
+                    }
+
+                    if root.nav == 4 : Section {
+                        title: "Updates";
+                        Card {
+                            VerticalLayout {
+                                SRow {
+                                    title: "Check for new data"; desc: "How often the app wakes up. Between checks it does nothing.";
+                                    Seg { options: ["5 min", "15 min", "30 min", "60 min"]; current: root.refresh-index; picked(i) => { root.set-refresh(i); } }
+                                }
+                                SRow {
+                                    title: "Cache lifetime"; desc: "Reuse saved data younger than this instead of going online. The refresh button always fetches.";
+                                    Seg { options: ["Off", "15 min", "30 min", "1 h", "2 h"]; current: root.cache-index; picked(i) => { root.set-cache(i); } }
+                                }
+                            }
+                        }
+                        Text { text: "Data: Open-Meteo (open-meteo.com). Free, no key."; color: Theme.fg3; font-size: 12px; }
+                    }
+
+                    if root.nav == 5 : Section {
+                        title: "System";
+                        Card {
+                            VerticalLayout {
+                                SRow {
+                                    title: "Start with Windows"; desc: "Launches when you sign in. Starts hidden in the tray if the tray is on.";
+                                    Switch2 { on: root.autostart; toggled => { root.set-autostart(!root.autostart); } }
+                                }
+                                SRow {
+                                    title: "Keep running in the tray"; desc: "Closing the window hides it to the tray. Use Exit in the tray menu to quit. Off: closing quits.";
+                                    Switch2 { on: root.tray-on; toggled => { root.set-tray(!root.tray-on); } }
+                                }
+                            }
+                        }
+                        Text { text: "Only one Skylight runs at a time. Opening it again brings the existing window forward."; color: Theme.fg3; font-size: 12px; wrap: word-wrap; }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Notification-area icon. Left-click opens the window; right-click shows the menu.
+export component AppTray inherits SystemTrayIcon {
+    in property <string> tip: "Skylight";
+    icon: @image-url("../assets/icon.png");
+    tooltip: root.tip;
+    callback show-window();
+    callback refresh();
+    callback quit();
+    clicked => { root.show-window(); }
+    Menu {
+        MenuItem { title: "Open Skylight"; activated => { root.show-window(); } }
+        MenuItem { title: "Refresh"; activated => { root.refresh(); } }
+        MenuItem { title: "Exit"; activated => { root.quit(); } }
+    }
+}

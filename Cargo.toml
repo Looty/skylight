@@ -1,0 +1,41 @@
+[package]
+name = "skylight"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.92" # slint 1.18
+description = "Lightweight native Windows weather app: Rust + Slint software renderer, Open-Meteo data, about 30 MB of memory"
+license = "MIT"
+readme = "README.md"
+keywords = ["weather", "windows", "slint", "open-meteo"]
+categories = ["gui"]
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
+
+[lints.clippy]
+dbg_macro = "warn"
+unimplemented = "warn"
+# `todo` is left off: Slint's generated code contains todo!() placeholders.
+
+[dependencies]
+slint = { version = "1.18", default-features = false, features = ["std", "backend-default", "renderer-software", "compat-1-2"] }
+ureq = { version = "2", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Registry", "Win32_System_Threading"] }
+
+[build-dependencies]
+slint-build = "1.18"
+winresource = "0.1.34"
+
+[profile.release]
+opt-level = "s" # size over speed; the UI is not CPU bound
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[features]
+# Sharper text via Skia, at the cost of a bigger binary and more memory. Off by default.
+skia = ["slint/renderer-skia"]
+femtovg = ["slint/renderer-femtovg"]
