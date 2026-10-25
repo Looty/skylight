@@ -21,7 +21,7 @@ Get-FileHash .\skylight-<version>-windows-x64.zip -Algorithm SHA256
 
 - Current conditions, hourly chart (hover for details), 6-day forecast, and tiles for wind, pressure, air quality, UV, visibility, sun and moon phase.
 - Saved places with a city search.
-- Light, dark or system theme, accent colour, and units for temperature, wind, pressure and distance.
+- Light, dark or system theme, and units for temperature, wind, pressure and distance.
 - Responses are cached on disk (30 minutes by default) so reopening the app does not hit the network.
 
 Settings and the cache live in `%APPDATA%\Skylight`.

@@ -1,4 +1,4 @@
-import { ScrollView, Palette } from "std-widgets.slint";
+import { Palette } from "std-widgets.slint";
 import "../assets/fonts/LatoWeb-Regular.ttf";
 import "../assets/fonts/LatoWeb-Light.ttf";
 import "../assets/fonts/LatoWeb-Semibold.ttf";
@@ -6,24 +6,25 @@ import "../assets/fonts/LatoWeb-Bold.ttf";
 
 export global Theme {
     in property <int> mode: 0; // 0 system, 1 light, 2 dark
-    in property <color> accent: #ffc83d;
     out property <bool> dark: mode == 2 || (mode == 0 && Palette.color-scheme == ColorScheme.dark);
-    out property <color> bg: dark ? #0c0f20 : #e9ecf8;
-    out property <color> surface: dark ? #171b3a : #ffffff;
-    out property <color> surface2: dark ? #1f2449 : #f2f4fc;
-    out property <color> surface3: dark ? #272d58 : #e4e8f7;
-    out property <color> line: dark ? #ffffff14 : #161a3a1a;
-    out property <color> track: dark ? #ffffff1a : #161a3a1a;
-    out property <color> fg: dark ? #eef0ff : #161a3a;
-    out property <color> fg2: dark ? #a9aed4 : #4f557e;
-    out property <color> fg3: dark ? #7378a8 : #7a81a8;
-    out property <color> on-accent: #2a2200;
+    // Neutrals carry the layout; hue only ever means something (blue = rain/action, amber = temperature, status colours = status).
+    out property <color> accent: dark ? #5aa9ff : #2f7fe6;
+    out property <color> bg: dark ? #0e1116 : #f2f4f7;
+    out property <color> surface: dark ? #151a22 : #ffffff;
+    out property <color> surface2: dark ? #1b212b : #eff1f5;
+    out property <color> surface3: dark ? #242c38 : #e4e8ee;
+    out property <color> line: dark ? #ffffff0f : #0e11161a;
+    out property <color> track: dark ? #ffffff14 : #0e11161a;
+    out property <color> fg: dark ? #e8ecf2 : #141820;
+    out property <color> fg2: dark ? #9aa4b2 : #566070;
+    out property <color> fg3: dark ? #7c8796 : #6b7686;
+    out property <color> on-accent: dark ? #0a1220 : #ffffff;
     out property <color> good: dark ? #47c98a : #1f9d62;
     out property <color> warn: dark ? #f2994a : #c9640f;
     out property <color> bad: dark ? #f06a78 : #d6404f;
     out property <color> info: dark ? #5aa9ff : #2f7fe6;
-    out property <color> temp-c: dark ? #f0a45d : #e0782f;
-    out property <color> rain-c: dark ? #5aa9ff : #3b82f6;
+    out property <color> temp-c: dark ? #f2a65a : #d9822b;
+    out property <color> rain-c: dark ? #5aa9ff : #2f7fe6;
     pure public function tone(t: int) -> color {
         t == 0 ? good : t == 1 ? warn : t == 2 ? bad : info
     }
@@ -48,28 +49,9 @@ export struct TileData {
 
 component Card inherits Rectangle {
     background: Theme.surface;
-    border-radius: 16px;
+    border-radius: 12px;
     border-width: 1px;
     border-color: Theme.line;
-}
-
-component Pill inherits Rectangle {
-    in property <string> text;
-    in property <int> tone;
-    height: 22px;
-    width: lbl.preferred-width + 28px;
-    border-radius: 11px;
-    background: Theme.tone(tone).with-alpha(0.18);
-    Rectangle {
-        x: 9px; y: (parent.height - self.height) / 2;
-        width: 6px; height: 6px; border-radius: 3px;
-        background: Theme.tone(root.tone);
-    }
-    lbl := Text {
-        x: 20px; y: (parent.height - self.height) / 2;
-        text: root.text; font-size: 12px; font-weight: 600;
-        color: Theme.tone(root.tone).mix(Theme.fg, 0.35);
-    }
 }
 
 component WIcon inherits Rectangle {
@@ -267,14 +249,14 @@ component SRow inherits Rectangle {
 
 component TileCard inherits Card {
     in property <TileData> d;
-    height: 214px;
+    height: 152px;
     VerticalLayout {
         padding: 16px; spacing: 8px;
-        Text { text: d.title; color: Theme.fg2; font-size: 13px; font-weight: 600; }
+        Text { text: d.title; color: Theme.fg2; font-size: 13px; font-weight: 500; }
         HorizontalLayout {
-            spacing: 12px; alignment: start; height: 96px;
+            spacing: 16px; height: 96px;
             Rectangle {
-                width: 96px; height: 96px;
+                width: 80px; height: 80px; y: 8px;
                 Path {
                     width: 100%; height: 100%; viewbox-width: 100; viewbox-height: 100;
                     commands: d.track; stroke: Theme.track; stroke-width: d.stroke * 1px; stroke-line-cap: round;
@@ -288,14 +270,23 @@ component TileCard inherits Card {
                     commands: d.shape; fill: d.color;
                 }
             }
+            // Everything sits beside the gauge, so wide tiles don't leave an empty right half.
             VerticalLayout {
-                alignment: center;
-                Text { text: d.value; font-size: 30px; font-weight: 300; color: Theme.fg; overflow: elide; }
-                Text { text: d.unit; font-size: 12px; color: Theme.fg3; overflow: elide; }
+                alignment: center; spacing: 3px; horizontal-stretch: 1;
+                HorizontalLayout {
+                    spacing: 6px; alignment: start;
+                    Text { text: d.value; font-size: 30px; font-weight: 400; color: Theme.fg; vertical-alignment: bottom; }
+                    Text { text: d.unit; font-size: 13px; color: Theme.fg2; vertical-alignment: bottom; overflow: elide; }
+                }
+                // Status is the only coloured thing on a tile: a dot, then plain text.
+                HorizontalLayout {
+                    spacing: 8px; alignment: start;
+                    Rectangle { width: 8px; height: 8px; y: 5px; border-radius: 4px; background: Theme.tone(d.tone); }
+                    Text { text: d.status; font-size: 13px; font-weight: 500; color: Theme.fg; overflow: elide; }
+                }
+                Text { text: d.caption; color: Theme.fg2; font-size: 13px; wrap: word-wrap; overflow: elide; }
             }
         }
-        Pill { text: d.status; tone: d.tone; }
-        Text { text: d.caption; color: Theme.fg2; font-size: 12px; wrap: word-wrap; }
     }
 }
 
@@ -304,10 +295,10 @@ component TileGrid inherits Rectangle {
     property <length> gap: 14px;
     property <int> cols: Math.max(1, Math.floor((self.width + gap) / (230px + gap)));
     property <length> tw: (self.width - gap * (cols - 1)) / cols;
-    height: Math.ceil(tiles.length / cols) * (214px + gap);
+    height: Math.ceil(tiles.length / cols) * (152px + gap);
     for t[i] in tiles : TileCard {
         x: Math.mod(i, cols) * (tw + gap);
-        y: Math.floor(i / cols) * (214px + gap);
+        y: Math.floor(i / cols) * (152px + gap);
         width: tw;
         d: t;
     }
@@ -326,19 +317,19 @@ component HourlyCard inherits Card {
     in property <length> target-h: 300px;
     in property <float> vb-h: 200;
     callback aspect-changed(float);
-    property <length> ch: Math.max(110px, root.target-h - 182px);
+    property <length> ch: Math.max(110px, root.target-h - 202px);
     property <float> aspect: root.ch / Math.max(1px, root.width - 32px);
     changed aspect => { root.aspect-changed(root.aspect); }
     init => { root.aspect-changed(root.aspect); }
-    height: 182px + ch;
+    height: 202px + ch;
     // Column under the mouse, or -1. The mouse area covers the hour labels, chart and rain bar.
     property <int> hover: area.has-hover ? Math.min(11, Math.max(0, Math.floor(area.mouse-x / (area.width / 12)))) : -1;
     VerticalLayout {
         padding: 16px; spacing: 6px;
         HorizontalLayout {
-            Text { text: root.title; color: Theme.fg2; font-size: 14px; font-weight: 600; }
+            Text { text: root.title; color: Theme.fg; font-size: 15px; font-weight: 600; }
             Rectangle { horizontal-stretch: 1; }
-            Text { text: "Bottom bar: chance of rain"; color: Theme.fg3; font-size: 12px; vertical-alignment: center; }
+            Text { text: "Temperature and chance of rain"; color: Theme.fg2; font-size: 13px; vertical-alignment: center; }
         }
         Rectangle {
             VerticalLayout {
@@ -347,11 +338,11 @@ component HourlyCard inherits Card {
                     for h[i] in hours : Rectangle {
                         horizontal-stretch: 1;
                         border-radius: 10px;
-                        background: root.hover == i ? Theme.surface3 : transparent;
+                        background: root.hover == i ? Theme.surface3 : (h.now ? Theme.surface2 : transparent);
                         animate background { duration: 120ms; }
                         VerticalLayout {
-                            padding-top: 4px; padding-bottom: 4px; spacing: 3px; alignment: start;
-                            Text { text: h.label; horizontal-alignment: center; font-size: 12px; font-weight: h.now ? 700 : 400; color: h.now ? Theme.accent.mix(Theme.fg, 0.4) : Theme.fg2; }
+                            padding-top: 8px; padding-bottom: 8px; spacing: 4px; alignment: start;
+                            Text { text: h.label; horizontal-alignment: center; font-size: 13px; font-weight: h.now ? 600 : 400; color: h.now ? Theme.fg : Theme.fg2; }
                             Rectangle {
                                 height: 30px;
                                 WIcon {
@@ -361,25 +352,24 @@ component HourlyCard inherits Card {
                                     animate y { duration: 120ms; }
                                 }
                             }
-                            Text { text: h.temp; horizontal-alignment: center; font-size: 13px; color: root.hover == i ? Theme.fg : Theme.fg2; }
+                            Text { text: h.temp; horizontal-alignment: center; font-size: 15px; font-weight: h.now ? 600 : 400; color: (root.hover == i || h.now) ? Theme.fg : Theme.fg2; }
                         }
                     }
                 }
                 Rectangle {
                     height: root.ch;
-                    Rectangle { y: 0; height: 1px; background: Theme.line; }
                     Rectangle { y: parent.height - 1px; height: 1px; background: Theme.line; }
-                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-area; fill: Theme.temp-c.with-alpha(0.22); }
-                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-line; stroke: Theme.temp-c; stroke-width: 2.5px; }
+                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-area; fill: @linear-gradient(180deg, Theme.temp-c.with-alpha(0.28) 0%, Theme.temp-c.with-alpha(0) 100%); }
+                    Path { width: 100%; height: 100%; viewbox-width: 1200; viewbox-height: root.vb-h; commands: root.chart-line; stroke: Theme.temp-c; stroke-width: 2px; stroke-line-cap: round; }
                     for m in marks : Rectangle {
                         x: parent.width * m.x; width: 1px; height: parent.height;
-                        background: Theme.fg3.with-alpha(0.5);
-                        Text { x: 5px; y: parent.height - 18px; text: m.text; font-size: 11px; color: Theme.fg2; }
+                        background: Theme.fg3.with-alpha(0.4);
+                        Text { x: m.x > 0.8 ? -(self.width + 6px) : 6px; y: parent.height - 22px; text: m.text; font-size: 12px; color: Theme.fg2; }
                     }
                     Rectangle {
                         width: 12px; height: 12px; border-radius: 6px;
-                        x: parent.width * 1.5 / 12 - 6px; y: parent.height * now-y - 6px;
-                        background: Theme.accent; border-width: 3px; border-color: Theme.surface;
+                        x: parent.width * 0.5 / 12 - 6px; y: parent.height * now-y - 6px;
+                        background: Theme.temp-c; border-width: 3px; border-color: Theme.surface;
                     }
                     if root.hover >= 0 : Rectangle {
                         x: parent.width * (root.hover + 0.5) / 12; width: 1px; height: parent.height;
@@ -409,21 +399,43 @@ component HourlyCard inherits Card {
                         }
                     }
                 }
+                // Rain chance: one slim bar per hour, aligned under its column.
                 HorizontalLayout {
-                    spacing: 2px;
+                    height: 44px;
                     for h[i] in hours : Rectangle {
-                        horizontal-stretch: 1; height: 24px;
-                        background: i == 0 ? Theme.track : Theme.rain-c.with-alpha(h.op);
-                        border-top-left-radius: i == 0 ? 8px : 0px;
-                        border-bottom-left-radius: i == 0 ? 8px : 0px;
-                        border-top-right-radius: i == 11 ? 8px : 0px;
-                        border-bottom-right-radius: i == 11 ? 8px : 0px;
-                        Text { text: h.precip; font-size: 12px; font-weight: 600; color: i == 0 ? Theme.fg3 : Theme.fg; horizontal-alignment: center; vertical-alignment: center; }
+                        horizontal-stretch: 1;
+                        if h.op > 0 : Text {
+                            y: parent.height - 3px - Math.max(2px, 24px * h.op) - self.height - 3px;
+                            width: parent.width; horizontal-alignment: center;
+                            text: h.precip; font-size: 12px; color: Theme.rain-c;
+                        }
+                        Rectangle {
+                            width: 20px; height: Math.max(2px, 24px * h.op);
+                            x: (parent.width - self.width) / 2; y: parent.height - self.height;
+                            border-radius: 2px;
+                            background: h.op > 0 ? Theme.rain-c : Theme.track;
+                        }
                     }
                 }
             }
             area := TouchArea { }
         }
+    }
+}
+
+/// Scroll area with a slim overlay scrollbar (the stock ScrollView's bar is too wide).
+component ThinScroll inherits Rectangle {
+    clip: true;
+    fl := Flickable {
+        @children
+    }
+    property <length> max-scroll: Math.max(0px, fl.content-height - fl.height);
+    property <length> thumb-h: Math.max(28px, fl.height * fl.height / Math.max(1px, fl.content-height));
+    if root.max-scroll > 0 : Rectangle {
+        x: parent.width - 5px; width: 3px; height: root.thumb-h;
+        y: (-fl.content-y / root.max-scroll) * (parent.height - root.thumb-h);
+        border-radius: 1.5px;
+        background: Theme.fg3.with-alpha(0.5);
     }
 }
 
@@ -472,7 +484,6 @@ export component AppWindow inherits Window {
 
     // ---- settings state ----
     in property <int> theme-mode;
-    in property <int> accent-index;
     in property <int> u-temp;
     in property <int> u-wind;
     in property <int> u-press;
@@ -480,6 +491,7 @@ export component AppWindow inherits Window {
     in property <int> refresh-index;
     in property <int> cache-index;
     in property <bool> anim;
+    in property <int> zoom-pct: 100;
     in property <bool> autostart;
     in property <bool> tray-on;
     in property <string> tray-tip;
@@ -495,7 +507,6 @@ export component AppWindow inherits Window {
     callback add-hit(int);
     callback search(string);
     callback set-theme(int);
-    callback set-accent(int);
     callback set-unit(int, int);
     callback set-refresh(int);
     callback set-cache(int);
@@ -505,6 +516,20 @@ export component AppWindow inherits Window {
     callback set-anim(bool);
     callback toggle-flag(int);
     callback refresh();
+    /// Ctrl + / Ctrl - / Ctrl 0: +1 bigger, -1 smaller, 0 reset.
+    callback zoom(int);
+
+    // Key events from anywhere in the window bubble up to here.
+    FocusScope {
+    init => { self.focus(); }
+    key-pressed(e) => {
+        if e.modifiers.control {
+            if e.text == "+" || e.text == "=" { root.zoom(1); return accept; }
+            if e.text == "-" || e.text == "_" { root.zoom(-1); return accept; }
+            if e.text == "0" { root.zoom(0); return accept; }
+        }
+        reject
+    }
 
     // ---- header ----
     VerticalLayout {
@@ -549,10 +574,10 @@ export component AppWindow inherits Window {
         // ---- dashboard: side rail ----
         if !root.settings-open : HorizontalLayout {
             padding: 6px; padding-left: 20px; padding-right: 20px; padding-bottom: 20px; spacing: 14px;
-            ScrollView {
+            ThinScroll {
                 width: 296px;
                 VerticalLayout {
-                    spacing: 14px; padding-right: 6px; alignment: start;
+                    spacing: 14px; padding-right: 10px; alignment: start;
                     Card {
                         height: 168px;
                         HorizontalLayout {
@@ -564,9 +589,9 @@ export component AppWindow inherits Window {
                                     Text { text: root.temp; font-size: 64px; font-weight: 300; color: Theme.fg; }
                                     Text { text: "°" + root.temp-unit; font-size: 20px; color: Theme.fg2; vertical-alignment: top; }
                                 }
-                                Text { text: root.cond; font-size: 16px; font-weight: 600; color: Theme.fg; }
-                                Text { text: root.hi-lo; font-size: 12px; color: Theme.fg2; }
-                                Text { text: root.feels-text; font-size: 12px; color: Theme.fg3; }
+                                Text { text: root.cond; font-size: 20px; font-weight: 500; color: Theme.fg; overflow: elide; }
+                                Text { text: root.hi-lo; font-size: 13px; color: Theme.fg2; overflow: elide; }
+                                Text { text: root.feels-text; font-size: 13px; color: Theme.fg2; overflow: elide; }
                             }
                             Rectangle {
                                 if root.anim : WIcon { kind: root.cond-icon; width: 64px; height: 64px; animated: true; }
@@ -577,19 +602,19 @@ export component AppWindow inherits Window {
                     places-card := Card {
                         VerticalLayout {
                             padding: 12px; spacing: 2px;
-                            Text { text: "Saved places"; font-size: 13px; font-weight: 600; color: Theme.fg2; padding: 4px; }
+                            Text { text: "Saved places"; font-size: 15px; font-weight: 600; color: Theme.fg; padding: 4px; }
                             for p[i] in root.places : Rectangle {
                                 height: 48px; border-radius: 10px;
-                                background: p.selected ? Theme.surface3 : (pta.has-hover ? Theme.surface2 : transparent);
+                                background: p.selected ? Theme.surface2 : (pta.has-hover ? Theme.surface2.with-alpha(0.6) : transparent);
                                 HorizontalLayout {
                                     padding-left: 10px; padding-right: 10px; spacing: 8px;
                                     VerticalLayout {
                                         alignment: center; horizontal-stretch: 1;
-                                        Text { text: p.name; font-size: 14px; color: Theme.fg; overflow: elide; }
-                                        Text { text: p.region; font-size: 11px; color: Theme.fg3; overflow: elide; }
+                                        Text { text: p.name; font-size: 15px; font-weight: p.selected ? 600 : 400; color: Theme.fg; overflow: elide; }
+                                        Text { text: p.region; font-size: 12px; color: Theme.fg2; overflow: elide; }
                                     }
                                     Rectangle { width: 26px; WIcon { kind: p.icon; width: 26px; height: 26px; } }
-                                    Text { text: p.temp; font-size: 17px; color: Theme.fg; vertical-alignment: center; min-width: 34px; horizontal-alignment: right; }
+                                    Text { text: p.temp; font-size: 15px; color: Theme.fg; vertical-alignment: center; min-width: 34px; horizontal-alignment: right; }
                                 }
                                 pta := TouchArea { clicked => { root.select-place(i); } mouse-cursor: pointer; }
                             }
@@ -598,13 +623,15 @@ export component AppWindow inherits Window {
                     if root.show-daily : Card {
                         VerticalLayout {
                             padding: 14px; spacing: 0px;
-                            Text { text: "Daily forecast"; font-size: 13px; font-weight: 600; color: Theme.fg2; padding-bottom: 6px; }
-                            for d in root.days : Rectangle {
-                                height: 38px;
+                            Text { text: "Daily forecast"; font-size: 15px; font-weight: 600; color: Theme.fg; padding-bottom: 6px; }
+                            for d[n] in root.days : Rectangle {
+                                height: 44px;
+                                if n > 0 : Rectangle { y: 0; height: 1px; background: Theme.line; }
                                 HorizontalLayout {
                                     spacing: 8px;
-                                    Text { text: d.today ? "Today" : d.name; width: 50px; font-size: 13px; font-weight: d.today ? 700 : 400; color: Theme.fg2; vertical-alignment: center; }
+                                    Text { text: d.today ? "Today" : d.name; width: 48px; font-size: 15px; font-weight: d.today ? 600 : 400; color: d.today ? Theme.fg : Theme.fg2; vertical-alignment: center; }
                                     Rectangle { width: 26px; WIcon { kind: d.icon; width: 26px; height: 26px; } }
+                                    Text { text: d.lo; font-size: 15px; color: Theme.fg2; vertical-alignment: center; horizontal-alignment: right; min-width: 32px; }
                                     Rectangle {
                                         horizontal-stretch: 1;
                                         Rectangle {
@@ -615,7 +642,7 @@ export component AppWindow inherits Window {
                                             }
                                         }
                                     }
-                                    Text { text: d.hi + " / " + d.lo; font-size: 13px; color: Theme.fg; vertical-alignment: center; horizontal-alignment: right; min-width: 64px; }
+                                    Text { text: d.hi; font-size: 15px; font-weight: 500; color: Theme.fg; vertical-alignment: center; horizontal-alignment: right; min-width: 32px; }
                                 }
                             }
                         }
@@ -624,9 +651,9 @@ export component AppWindow inherits Window {
             }
             VerticalLayout {
                 spacing: 12px;
-                ScrollView {
+                ThinScroll {
                     VerticalLayout {
-                        spacing: 14px; padding-right: 6px; alignment: start;
+                        spacing: 14px; padding-right: 10px; alignment: start;
                         if root.tab == 0 && root.show-hourly : HourlyCard {
                             title: "Hourly"; hours: root.hours; chart-line: root.chart-line; chart-area: root.chart-area;
                             now-y: root.now-y; marks: root.marks;
@@ -654,9 +681,9 @@ export component AppWindow inherits Window {
                     nta := TouchArea { clicked => { root.nav = i; } mouse-cursor: pointer; }
                 }
             }
-            ScrollView {
+            ThinScroll {
                 VerticalLayout {
-                    padding-right: 6px; spacing: 12px; alignment: start;
+                    padding-right: 10px; spacing: 12px; alignment: start;
 
                     if root.nav == 0 : Section {
                         title: "Appearance";
@@ -667,13 +694,23 @@ export component AppWindow inherits Window {
                                     Seg { options: ["System", "Light", "Dark"]; current: root.theme-mode; picked(i) => { root.set-theme(i); } }
                                 }
                                 SRow {
-                                    title: "Accent colour"; desc: "Highlights and the current hour.";
+                                    title: "Interface size"; desc: "Also Ctrl + and Ctrl − anywhere in the app, Ctrl 0 to reset.";
                                     HorizontalLayout {
                                         spacing: 8px;
-                                        for c[i] in [#ffc83d, #5aa9ff, #3fd0a0, #ff7a9c, #a78bfa] : Rectangle {
-                                            width: 28px; height: 28px; border-radius: 14px; background: c;
-                                            border-width: 2px; border-color: root.accent-index == i ? Theme.fg : transparent;
-                                            TouchArea { clicked => { root.set-accent(i); } mouse-cursor: pointer; }
+                                        for b in ["−", "+"] : Rectangle {
+                                            width: 32px; height: 32px; border-radius: 10px;
+                                            background: zta.has-hover ? Theme.surface3 : Theme.surface2;
+                                            border-width: 1px; border-color: Theme.line;
+                                            Text { text: b; font-size: 18px; color: Theme.fg; horizontal-alignment: center; vertical-alignment: center; }
+                                            zta := TouchArea { clicked => { root.zoom(b == "+" ? 1 : -1); } mouse-cursor: pointer; }
+                                        }
+                                        Text { text: root.zoom-pct + "%"; min-width: 48px; font-size: 15px; font-weight: 600; color: Theme.fg; vertical-alignment: center; horizontal-alignment: center; }
+                                        Rectangle {
+                                            width: rt.preferred-width + 24px; height: 32px; border-radius: 10px;
+                                            background: rta.has-hover ? Theme.surface3 : Theme.surface2;
+                                            border-width: 1px; border-color: Theme.line;
+                                            rt := Text { text: "Reset"; font-size: 13px; color: Theme.fg; x: 12px; y: (parent.height - self.height) / 2; }
+                                            rta := TouchArea { clicked => { root.zoom(0); } mouse-cursor: pointer; }
                                         }
                                     }
                                 }
@@ -805,6 +842,7 @@ export component AppWindow inherits Window {
                 }
             }
         }
+    }
     }
 }
 

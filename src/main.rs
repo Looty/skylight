@@ -7,9 +7,9 @@ mod system;
 mod view;
 
 use api::{PlaceNow, Weather};
-use settings::{Place, Settings, CACHE_MINUTES, REFRESH_MINUTES};
+use settings::{Place, Settings, CACHE_MINUTES, REFRESH_MINUTES, ZOOM_MAX, ZOOM_MIN, ZOOM_STEP};
 use slint::{ComponentHandle, Timer, TimerMode};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
@@ -49,11 +49,43 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 thread_local! {
     /// The tray icon lives on the UI thread; kept here so `redraw` can update its tooltip.
     static TRAY: RefCell<Option<AppTray>> = const { RefCell::new(None) };
+    /// The window's own (DPI) scale factor, and the zoom we last applied on top of it.
+    static NATIVE_SCALE: Cell<f32> = const { Cell::new(0.0) };
+    static APPLIED_ZOOM: Cell<f32> = const { Cell::new(1.0) };
+}
+
+/// Scale the whole interface by the saved zoom. Safe to call often: it only acts when the
+/// window's scale factor differs from native * zoom (first call, or the OS changed it, e.g. on
+/// a monitor change).
+fn apply_zoom(ui: &AppWindow) {
+    let zoom = with_state(|st| st.s.zoom) as f32 / 100.0;
+    let cur = ui.window().scale_factor();
+    let close = |a: f32, b: f32| (a - b).abs() < 0.001;
+    if NATIVE_SCALE.get() <= 0.0 || !close(cur, NATIVE_SCALE.get() * APPLIED_ZOOM.get()) {
+        // First call, or the OS changed the scale factor under us: `cur` is the native value.
+        NATIVE_SCALE.set(cur);
+        APPLIED_ZOOM.set(1.0);
+    }
+    let target = NATIVE_SCALE.get() * zoom;
+    if !close(cur, target) {
+        // Slint keeps the logical size on a scale change, so tell it the OS window's real
+        // (unchanged) physical size in the new logical units, or the renderer's buffer no longer
+        // matches the window.
+        let size = ui.window().size();
+        ui.window().dispatch_event(slint::platform::WindowEvent::ScaleFactorChanged { scale_factor: target });
+        ui.window().dispatch_event(slint::platform::WindowEvent::Resized {
+            size: slint::LogicalSize::new(size.width as f32 / target, size.height as f32 / target),
+        });
+    }
+    APPLIED_ZOOM.set(zoom);
 }
 
 fn redraw(ui: &AppWindow) {
     {
-        let st = STATE.lock().unwrap();
+        let mut st = STATE.lock().unwrap();
+        if let Some(w) = st.weather.as_mut() {
+            w.roll();
+        }
         view::apply(ui, &st);
     }
     TRAY.with(|t| {
@@ -104,7 +136,9 @@ fn fetch(ui: slint::Weak<AppWindow>, force: bool) {
             .unwrap_or_else(|_| vec![None; places.len()]);
         with_state(|st| {
             match w {
-                Ok((w, age, err)) => {
+                Ok((mut w, age, err)) => {
+                    // Cached data was current `age` seconds ago, not now.
+                    w.base = std::time::Instant::now().checked_sub(Duration::from_secs(age)).unwrap_or(w.base);
                     st.weather = Some(w);
                     st.cached = age > 60;
                     st.status = match err {
@@ -151,12 +185,6 @@ fn main() -> Result<(), slint::PlatformError> {
     ui.on_set_theme(move |v| {
         change!(w.unwrap(), |st| {
             st.s.theme = v;
-        })
-    });
-    let w = ui.as_weak();
-    ui.on_set_accent(move |v| {
-        change!(w.unwrap(), |st| {
-            st.s.accent = v;
         })
     });
     let w = ui.as_weak();
@@ -276,6 +304,13 @@ fn main() -> Result<(), slint::PlatformError> {
         })
     });
     let w = ui.as_weak();
+    ui.on_zoom(move |d| {
+        change!(w.unwrap(), |st| {
+            st.s.zoom = if d == 0 { 100 } else { (st.s.zoom + d * ZOOM_STEP).clamp(ZOOM_MIN, ZOOM_MAX) };
+        });
+        apply_zoom(&w.unwrap());
+    });
+    let w = ui.as_weak();
     ui.on_set_anim(move |v| {
         change!(w.unwrap(), |st| {
             st.s.anim = v;
@@ -342,6 +377,19 @@ fn main() -> Result<(), slint::PlatformError> {
         });
     }
 
+    // Keep "now" on the current hour between fetches (redraw rolls it forward).
+    let clock_timer = Timer::default();
+    {
+        let w = ui.as_weak();
+        clock_timer.start(TimerMode::Repeated, Duration::from_secs(30), move || {
+            let Some(ui) = w.upgrade() else { return };
+            if ui.window().is_visible() && !ui.window().is_minimized() {
+                apply_zoom(&ui);
+                redraw(&ui);
+            }
+        });
+    }
+
     // Tray icon, start-with-Windows and single-instance wiring.
     let tray = AppTray::new()?;
     {
@@ -393,6 +441,19 @@ fn main() -> Result<(), slint::PlatformError> {
     let hidden_start = std::env::args().any(|a| a == "--minimized") && with_state(|st| st.s.tray);
     if !hidden_start {
         ui.show()?;
+        apply_zoom(&ui);
+    }
+    // The OS may report its own scale factor right after the window appears; apply ours on top.
+    let zoom_timer = Timer::default();
+    {
+        let w = ui.as_weak();
+        zoom_timer.start(TimerMode::SingleShot, Duration::from_millis(300), move || {
+            if let Some(ui) = w.upgrade() {
+                if ui.window().is_visible() {
+                    apply_zoom(&ui);
+                }
+            }
+        });
     }
     slint::run_event_loop_until_quit()
 }
@@ -401,6 +462,7 @@ fn main() -> Result<(), slint::PlatformError> {
 fn show_window(w: &slint::Weak<AppWindow>) {
     let Some(ui) = w.upgrade() else { return };
     let _ = ui.show();
+    apply_zoom(&ui);
     ui.window().set_minimized(false);
     fetch(w.clone(), false);
 }

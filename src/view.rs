@@ -10,7 +10,6 @@ const WARN: i32 = 1;
 const BAD: i32 = 2;
 const INFO: i32 = 3;
 const TONES: [(u8, u8, u8); 4] = [(0x3f, 0xb9, 0x7f), (0xee, 0x8f, 0x3a), (0xe8, 0x50, 0x5f), (0x4d, 0x9b, 0xff)];
-const ACCENTS: [(u8, u8, u8); 5] = [(0xff, 0xc8, 0x3d), (0x5a, 0xa9, 0xff), (0x3f, 0xd0, 0xa0), (0xff, 0x7a, 0x9c), (0xa7, 0x8b, 0xfa)];
 
 fn rgb(c: (u8, u8, u8)) -> Color {
     Color::from_rgb_u8(c.0, c.1, c.2)
@@ -536,19 +535,20 @@ fn build_tiles(w: &Weather, s: &Settings) -> Tiles {
 /// `vb` is the chart path's viewbox height; its width is always 1200.
 fn hour_cols(w: &Weather, s: &Settings, vb: f64) -> (Vec<HourData>, String, String, f32, Vec<MarkData>) {
     let i = w.idx as i64;
-    let mut idxs: Vec<i64> = vec![i - 3, i];
-    idxs.extend((1..=10).map(|k| i + 2 * k));
+    // Now, then a constant 2 h step for 24 h.
+    let idxs: Vec<i64> = (0..12).map(|k| i + 2 * k).collect();
     let cols: Vec<&Hour> = idxs.iter().map(|&k| &w.hours[k as usize]).collect();
     let mut hours: Vec<HourData> = cols
         .iter()
         .enumerate()
         .map(|(n, h)| HourData {
-            label: if n == 1 { "Now".into() } else { h.time.get(11..16).unwrap_or("").into() },
+            label: if n == 0 { "Now".into() } else { h.time.get(11..16).unwrap_or("").into() },
             icon: wmo(h.code, h.is_day).0,
             temp: ft(h.temp, s).into(),
             precip: format!("{}%", r0(h.prob)).into(),
-            now: n == 1,
-            op: (0.18 + (h.prob / 100.0).min(0.5) * 1.1) as f32,
+            now: n == 0,
+            // chance of rain as 0..1; drives the bar height
+            op: (h.prob.round() / 100.0).clamp(0.0, 1.0) as f32,
             y: 0.0,
             desc: wmo(h.code, h.is_day).1.into(),
         })
@@ -595,23 +595,21 @@ fn hour_cols(w: &Weather, s: &Settings, vb: f64) -> (Vec<HourData>, String, Stri
         None
     };
     let mut marks = vec![];
-    for (txt, ev) in [("↑", &w.days[w.today].sunrise), ("↓", &w.days[w.today].sunset)] {
+    for (txt, ev) in [("Sunrise", &w.days[w.today].sunrise), ("Sunset", &w.days[w.today].sunset)] {
         for add in [0.0, 1440.0] {
             if let Some(x) = place(day_start + mins(ev) + add) {
-                marks.push(MarkData { x, text: format!("{}{}", txt, ev.get(11..16).unwrap_or("")).into() });
+                marks.push(MarkData { x, text: format!("{} {}", txt, ev.get(11..16).unwrap_or("")).into() });
                 break;
             }
         }
     }
-    (hours, line, area, (ys[1] / vb) as f32, marks)
+    (hours, line, area, (ys[0] / vb) as f32, marks)
 }
 
 pub fn apply(ui: &AppWindow, st: &State) {
     let s = &st.s;
     ui.global::<Theme>().set_mode(s.theme);
-    ui.global::<Theme>().set_accent(rgb(ACCENTS[s.accent.clamp(0, 4) as usize]));
     ui.set_theme_mode(s.theme);
-    ui.set_accent_index(s.accent);
     ui.set_u_temp(s.u_temp);
     ui.set_u_wind(s.u_wind);
     ui.set_u_press(s.u_press);
@@ -621,6 +619,7 @@ pub fn apply(ui: &AppWindow, st: &State) {
     ui.set_tray_on(s.tray);
     ui.set_autostart(crate::system::autostart_enabled());
     ui.set_anim(s.anim);
+    ui.set_zoom_pct(s.zoom);
     ui.set_show_hourly(s.tiles[12]);
     ui.set_show_daily(s.tiles[13]);
     ui.set_status_msg(st.status.clone().into());

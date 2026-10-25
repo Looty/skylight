@@ -26,6 +26,9 @@ pub const FLAG_NAMES: [&str; 14] = [
     "Hourly chart",
     "Daily forecast",
 ];
+pub const ZOOM_MIN: i32 = 60;
+pub const ZOOM_MAX: i32 = 300;
+pub const ZOOM_STEP: i32 = 10;
 pub const REFRESH_MINUTES: [u64; 4] = [5, 15, 30, 60];
 /// How long a cached response counts as fresh. 0 turns the cache off.
 pub const CACHE_MINUTES: [u64; 5] = [0, 15, 30, 60, 120];
@@ -34,7 +37,6 @@ pub const CACHE_MINUTES: [u64; 5] = [0, 15, 30, 60, 120];
 #[serde(default)]
 pub struct Settings {
     pub theme: i32,
-    pub accent: i32,
     pub u_temp: i32,
     pub u_wind: i32,
     pub u_press: i32,
@@ -42,6 +44,8 @@ pub struct Settings {
     pub refresh: i32,
     pub cache: i32,
     pub anim: bool,
+    /// Interface size in percent (Ctrl + / Ctrl - / Ctrl 0), 100 = normal.
+    pub zoom: i32,
     /// Show a tray icon and keep running when the window is closed.
     pub tray: bool,
     pub tiles: Vec<bool>,
@@ -55,7 +59,6 @@ impl Default for Settings {
     fn default() -> Self {
         Settings {
             theme: 0,
-            accent: 0,
             u_temp: 0,
             u_wind: 0,
             u_press: 0,
@@ -63,6 +66,7 @@ impl Default for Settings {
             refresh: 1,
             cache: 2,
             anim: true,
+            zoom: 100,
             tray: true,
             tiles: vec![true; FLAG_NAMES.len()],
             places: vec![
@@ -86,6 +90,7 @@ impl Settings {
         let mut s: Settings =
             path().and_then(|p| std::fs::read_to_string(p).ok()).and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
         s.tiles.resize(FLAG_NAMES.len(), true);
+        s.zoom = s.zoom.clamp(ZOOM_MIN, ZOOM_MAX);
         if s.places.is_empty() {
             s.places = Settings::default().places;
         }

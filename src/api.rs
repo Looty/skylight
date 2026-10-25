@@ -49,6 +49,31 @@ pub struct Weather {
     pub today: usize,
     pub aqi: Option<f64>,
     pub pm25: Option<f64>,
+    /// Instant that `time` corresponds to; `roll` advances both together.
+    pub base: std::time::Instant,
+}
+
+impl Weather {
+    /// Move "now" forward by the time elapsed since `base`, so a long-lived window keeps
+    /// pointing at the current hour between fetches.
+    pub fn roll(&mut self) {
+        let mins = (self.base.elapsed().as_secs() / 60) as usize;
+        if mins == 0 {
+            return;
+        }
+        let m: usize = self.time.get(14..16).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let idx = self.idx + (m + mins) / 60;
+        if idx + 24 >= self.hours.len() {
+            return;
+        }
+        let t = &self.hours[idx].time;
+        self.time = format!("{}:{:02}", &t[..13], (m + mins) % 60);
+        self.idx = idx;
+        if let Some(d) = self.days.iter().position(|d| self.time.starts_with(&d.date)) {
+            self.today = d;
+        }
+        self.base += Duration::from_secs(mins as u64 * 60);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -156,7 +181,7 @@ pub fn parse_weather(raw: &Value) -> Result<Weather, String> {
         .collect();
     let key = &time[..13];
     let idx = hours.iter().position(|x| x.time.starts_with(key)).ok_or("current hour not found")?;
-    if idx < 3 || idx + 20 >= hours.len() {
+    if idx < 3 || idx + 24 >= hours.len() {
         return Err("forecast window too short".into());
     }
 
@@ -189,7 +214,7 @@ pub fn parse_weather(raw: &Value) -> Result<Weather, String> {
     let (x, y) = (f(&raw["a"]["current"]["us_aqi"]), f(&raw["a"]["current"]["pm2_5"]));
     let (aqi, pm25) = ((!x.is_nan()).then_some(x), (!y.is_nan()).then_some(y));
 
-    Ok(Weather { cur, time, hours, idx, days, today, aqi, pm25 })
+    Ok(Weather { cur, time, hours, idx, days, today, aqi, pm25, base: std::time::Instant::now() })
 }
 
 /// Current conditions for every saved place in one request.
