@@ -544,12 +544,10 @@ export component AppWindow inherits Window {
                 }
                 VerticalLayout {
                     alignment: center;
-                    Text { text: root.city-name; font-size: 17px; font-weight: 600; color: Theme.fg; }
+                    city-t := Text { text: root.city-name; font-size: 17px; font-weight: 600; color: Theme.fg; }
                 }
-                if root.width > 1000px : Text { text: root.city-region; color: Theme.fg3; vertical-alignment: center; overflow: elide; }
                 Rectangle { horizontal-stretch: 1; }
-                if root.width > 1150px || root.status-msg != "" : Text { text: root.status-msg != "" ? root.status-msg : root.updated; color: root.status-msg != "" ? Theme.warn : Theme.fg3; font-size: 12px; vertical-alignment: center; }
-                Rectangle {
+                rbtn := Rectangle {
                     width: 34px; height: 34px; border-radius: 10px; y: 9px;
                     background: refresh-ta.has-hover ? Theme.surface2 : transparent;
                     Text { text: "↻"; font-size: 18px; color: Theme.fg2; horizontal-alignment: center; vertical-alignment: center; }
@@ -561,6 +559,19 @@ export component AppWindow inherits Window {
                     current: root.settings-open ? 1 : 0;
                     picked(i) => { root.settings-open = i == 1; }
                 }
+            }
+            // Width-dependent header text lives outside the layout on purpose: conditions on
+            // root.width inside it made the window's own layout depend on its width (a binding loop).
+            Text {
+                x: city-t.absolute-position.x - parent.absolute-position.x + city-t.width + 12px; y: (parent.height - self.height) / 2;
+                visible: root.width > 1000px;
+                text: root.city-region; color: Theme.fg3;
+            }
+            Text {
+                x: rbtn.absolute-position.x - parent.absolute-position.x - 12px - self.width; y: (parent.height - self.height) / 2;
+                visible: root.width > 1150px || root.status-msg != "";
+                text: root.status-msg != "" ? root.status-msg : root.updated;
+                color: root.status-msg != "" ? Theme.warn : Theme.fg3; font-size: 12px;
             }
             // Dashboard sections, centred in the title row like a mode switch.
             if !root.settings-open : Seg {
@@ -658,7 +669,7 @@ export component AppWindow inherits Window {
                             title: "Hourly"; hours: root.hours; chart-line: root.chart-line; chart-area: root.chart-area;
                             now-y: root.now-y; marks: root.marks;
                             // Bottom edge lines up with the Saved places card on the left.
-                            target-h: places-card.y + places-card.height;
+                            target-h: 168px + 14px + places-card.preferred-height;
                             vb-h: root.chart-vb;
                             aspect-changed(a) => { root.chart-aspect(a); }
                         }
