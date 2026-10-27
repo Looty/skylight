@@ -2,6 +2,10 @@
 
 A small native Windows weather app. Rust + [Slint](https://slint.dev) (software renderer, no web engine), data from [Open-Meteo](https://open-meteo.com) (free, no key). About 30 MB of memory and near-zero CPU when idle.
 
+![Skylight main window](docs/main.png)
+
+![Skylight settings](docs/settings.png)
+
 ## Install
 
 1. Download the latest `skylight-<version>-windows-x64.zip` from the repository's Releases page.
